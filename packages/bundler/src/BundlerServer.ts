@@ -29,7 +29,12 @@ export class BundlerServer {
     readonly wallet: Wallet
   ) {
     this.app = express()
-    this.app.use(cors())
+    this.app.use(cors(
+      {
+        origin: ["https://abstractum.vercel.app", "https://abstractum-mattteochen.vercel.app/", "https://abstractum-git-main-mattteochen.vercel.app/", "https://abstractum.dev"],
+        optionsSuccessStatus: 200,
+      }
+    ))
     this.app.use(bodyParser.json())
 
     this.app.get('/', this.intro.bind(this))
