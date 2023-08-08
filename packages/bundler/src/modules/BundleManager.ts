@@ -1,7 +1,7 @@
 import { EntryPoint } from '@account-abstraction/contracts'
 import { MempoolManager } from './MempoolManager'
 import { ValidateUserOpResult, ValidationManager } from './ValidationManager'
-import { BigNumber, BigNumberish } from 'ethers'
+import { BigNumber, BigNumberish, ethers } from 'ethers'
 import { JsonRpcProvider, JsonRpcSigner } from '@ethersproject/providers'
 import Debug from 'debug'
 import { ReputationManager, ReputationStatus } from './ReputationManager'
@@ -57,10 +57,12 @@ export class BundleManager {
       const [bundle, storageMap] = await this.createBundle()
       if (bundle.length === 0) {
         debug('sendNextBundle - no bundle to send')
+        console.log('sendNextBundle - no bundle to send');
       } else {
         const beneficiary = await this._selectBeneficiary()
         const ret = await this.sendBundle(bundle, beneficiary, storageMap)
         debug(`sendNextBundle exit - after sent a bundle of ${bundle.length} `)
+        console.log(`sendNextBundle exit - after sent a bundle of ${bundle.length} `)
         return ret
       }
     })
@@ -68,6 +70,25 @@ export class BundleManager {
 
   async handlePastEvents (): Promise<void> {
     await this.eventsManager.handlePastEvents()
+  }
+
+  getGasPrice(chainId: string): string{
+    switch (chainId) {
+      case "0x1":
+        return ethers.utils.parseUnits('26', 'gwei').toString();
+      case "1":
+        return ethers.utils.parseUnits('26', 'gwei').toString();
+      case "0x89":
+        return ethers.utils.parseUnits('226', 'gwei').toString();
+      case "137":
+        return ethers.utils.parseUnits('226', 'gwei').toString();
+      case "0xa4b1":
+        return ethers.utils.parseUnits('0.1', 'gwei').toString();
+      case "42161":
+        return ethers.utils.parseUnits('0.1', 'gwei').toString();
+      default:
+        throw new Error("Unsupported chain id: + chainId");
+    }
   }
 
   /**
@@ -82,20 +103,24 @@ export class BundleManager {
         type: 2,
         nonce: await this.signer.getTransactionCount(),
         gasLimit: 10e6,
+        gasPrice: this.getGasPrice(this.provider._network.chainId.toString()),
         maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ?? 0,
         maxFeePerGas: feeData.maxFeePerGas ?? 0
       })
       tx.chainId = this.provider._network.chainId
+      console.log("ChainId:", this.provider._network.chainId);
       const signedTx = await this.signer.signTransaction(tx)
       let ret: string
       if (this.conditionalRpc) {
         debug('eth_sendRawTransactionConditional', storageMap)
+        console.log('eth_sendRawTransactionConditional', storageMap)
         ret = await this.provider.send('eth_sendRawTransactionConditional', [
           signedTx, { knownAccounts: storageMap }
         ])
         debug('eth_sendRawTransactionConditional ret=', ret)
       } else {
         // ret = await this.signer.sendTransaction(tx)
+        console.log('eth_sendRawTransaction')
         ret = await this.provider.send('eth_sendRawTransaction', [signedTx])
         debug('eth_sendRawTransaction ret=', ret)
       }
