@@ -31,7 +31,7 @@ export class BundlerServer {
     this.app = express()
     this.app.use(cors(
       {
-        origin: ["https://abstractum.vercel.app", "https://abstractum-mattteochen.vercel.app/", "https://abstractum-git-main-mattteochen.vercel.app/", "https://abstractum.dev"],
+        origin: ["https://abstractum.vercel.app", "https://abstractum-mattteochen.vercel.app", "https://abstractum-git-main-mattteochen.vercel.app", "https://abstractum.dev", "http://localhost:3000"],
         optionsSuccessStatus: 200,
       }
     ))
