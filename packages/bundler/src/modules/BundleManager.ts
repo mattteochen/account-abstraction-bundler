@@ -57,12 +57,10 @@ export class BundleManager {
       const [bundle, storageMap] = await this.createBundle()
       if (bundle.length === 0) {
         debug('sendNextBundle - no bundle to send')
-        console.log('sendNextBundle - no bundle to send');
       } else {
         const beneficiary = await this._selectBeneficiary()
         const ret = await this.sendBundle(bundle, beneficiary, storageMap)
         debug(`sendNextBundle exit - after sent a bundle of ${bundle.length} `)
-        console.log(`sendNextBundle exit - after sent a bundle of ${bundle.length} `)
         return ret
       }
     })
@@ -72,20 +70,20 @@ export class BundleManager {
     await this.eventsManager.handlePastEvents()
   }
 
-  getGasPrice(chainId: string): string{
+  getGasLimit(chainId: string): number{
     switch (chainId) {
       case "0x1":
-        return ethers.utils.parseUnits('26', 'gwei').toString();
+        return 600_000;
       case "1":
-        return ethers.utils.parseUnits('26', 'gwei').toString();
+        return 600_000;
       case "0x89":
-        return ethers.utils.parseUnits('226', 'gwei').toString();
+        return 2_000_000;
       case "137":
-        return ethers.utils.parseUnits('226', 'gwei').toString();
+        return 2_000_000;
       case "0xa4b1":
-        return ethers.utils.parseUnits('0.1', 'gwei').toString();
+        return 5_000_000;
       case "42161":
-        return ethers.utils.parseUnits('0.1', 'gwei').toString();
+        return 5_000_000;
       default:
         throw new Error("Unsupported chain id: + chainId");
     }
@@ -98,17 +96,26 @@ export class BundleManager {
    */
   async sendBundle (userOps: UserOperation[], beneficiary: string, storageMap: StorageMap): Promise<SendBundleReturn | undefined> {
     try {
-      const feeData = await this.provider.getFeeData()
+      const feeData = await this.provider.getFeeData();
+      console.log("Current gas data: ", feeData);
+
+      //disabling eip1559 transaction type, encountering underpriced tx on polygon
+
+      //const tx = await this.entryPoint.populateTransaction.handleOps(userOps, beneficiary, {
+      //  type: 2,
+      //  nonce: await this.signer.getTransactionCount(),
+      //  gasLimit: 10e6,
+      //  maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ?? 0,
+      //  maxFeePerGas: feeData.maxFeePerGas ?? 0
+      //})
+
+      //non-eip1559 transaction
       const tx = await this.entryPoint.populateTransaction.handleOps(userOps, beneficiary, {
-        type: 2,
         nonce: await this.signer.getTransactionCount(),
-        gasLimit: 10e6,
-        gasPrice: this.getGasPrice(this.provider._network.chainId.toString()),
-        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ?? 0,
-        maxFeePerGas: feeData.maxFeePerGas ?? 0
+        gasLimit: this.getGasLimit(this.provider._network.chainId.toString()),
+        gasPrice: feeData.gasPrice ?? 0,
       })
       tx.chainId = this.provider._network.chainId
-      console.log("ChainId:", this.provider._network.chainId);
       const signedTx = await this.signer.signTransaction(tx)
       let ret: string
       if (this.conditionalRpc) {
