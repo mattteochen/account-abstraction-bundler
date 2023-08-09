@@ -1,8 +1,8 @@
-import { EntryPoint } from '@account-abstraction/contracts'
+import { EntryPoint, UserOperationStruct } from '@account-abstraction/contracts'
 import { MempoolManager } from './MempoolManager'
 import { ValidateUserOpResult, ValidationManager } from './ValidationManager'
-import { BigNumber, BigNumberish } from 'ethers'
-import { JsonRpcProvider, JsonRpcSigner } from '@ethersproject/providers'
+import { BigNumber, BigNumberish, PopulatedTransaction, ethers } from 'ethers'
+import { FeeData, JsonRpcProvider, JsonRpcSigner } from '@ethersproject/providers'
 import Debug from 'debug'
 import { ReputationManager, ReputationStatus } from './ReputationManager'
 import { Mutex } from 'async-mutex'
@@ -70,6 +70,66 @@ export class BundleManager {
     await this.eventsManager.handlePastEvents()
   }
 
+  getGasLimit(chainId: string): number{
+    switch (chainId) {
+      case "0x1":
+        return 600_000;
+      case "1":
+        return 600_000;
+      case "0x89":
+        return 2_000_000;
+      case "137":
+        return 2_000_000;
+      case "0xa4b1":
+        return 5_000_000;
+      case "42161":
+        return 5_000_000;
+      default:
+        throw new Error("Unsupported chain id: + chainId");
+    }
+  }
+
+  /**
+   * retrieve the populated transaction object.
+   * some network are facing underpriced transaction error like Polygon with pre eip 1559 transaction type.
+   * @param props the user operation transaction context
+   * @returns the populated transaction object
+   */
+  async getTxByChain(props: {
+    chainId: string;
+    userOps: UserOperationStruct[],
+    beneficiary: string;
+    feeData: FeeData;
+  }): Promise<PopulatedTransaction> {
+    switch (props.chainId) {
+      case "1":
+        return await this.entryPoint.populateTransaction.handleOps(props.userOps, props.beneficiary, {
+          type: 2,
+          nonce: await this.signer.getTransactionCount(),
+          gasLimit: this.getGasLimit(props.chainId),
+          maxPriorityFeePerGas: props.feeData.maxPriorityFeePerGas ?? 0,
+          maxFeePerGas: props.feeData.maxFeePerGas ?? 0
+        });
+      case "137":
+        //non-eip1559 transaction
+        return await this.entryPoint.populateTransaction.handleOps(props.userOps, props.beneficiary, {
+          nonce: await this.signer.getTransactionCount(),
+          gasLimit: this.getGasLimit(props.chainId),
+          gasPrice: props.feeData.gasPrice ?? 0,
+        })
+      case "42161":
+        return await this.entryPoint.populateTransaction.handleOps(props.userOps, props.beneficiary, {
+          type: 2,
+          nonce: await this.signer.getTransactionCount(),
+          gasLimit: this.getGasLimit(props.chainId),
+          maxPriorityFeePerGas: props.feeData.maxPriorityFeePerGas ?? 0,
+          maxFeePerGas: props.feeData.maxFeePerGas ?? 0
+        });
+      default:
+        throw new Error("Unsupported chain id: " + props.chainId);
+    }
+  }
+
   /**
    * submit a bundle.
    * after submitting the bundle, remove all UserOps from the mempool
@@ -77,25 +137,29 @@ export class BundleManager {
    */
   async sendBundle (userOps: UserOperation[], beneficiary: string, storageMap: StorageMap): Promise<SendBundleReturn | undefined> {
     try {
-      const feeData = await this.provider.getFeeData()
-      const tx = await this.entryPoint.populateTransaction.handleOps(userOps, beneficiary, {
-        type: 2,
-        nonce: await this.signer.getTransactionCount(),
-        gasLimit: 10e6,
-        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ?? 0,
-        maxFeePerGas: feeData.maxFeePerGas ?? 0
-      })
+      const feeData = await this.provider.getFeeData();
+      console.log("Current gas data: ", feeData);
+
+      const tx = await this.getTxByChain({
+        chainId: this.provider._network.chainId.toString(),
+        userOps: userOps,
+        feeData: feeData,
+        beneficiary: beneficiary
+      });
+
       tx.chainId = this.provider._network.chainId
       const signedTx = await this.signer.signTransaction(tx)
       let ret: string
       if (this.conditionalRpc) {
         debug('eth_sendRawTransactionConditional', storageMap)
+        console.log('eth_sendRawTransactionConditional', storageMap)
         ret = await this.provider.send('eth_sendRawTransactionConditional', [
           signedTx, { knownAccounts: storageMap }
         ])
         debug('eth_sendRawTransactionConditional ret=', ret)
       } else {
         // ret = await this.signer.sendTransaction(tx)
+        console.log('eth_sendRawTransaction')
         ret = await this.provider.send('eth_sendRawTransaction', [signedTx])
         debug('eth_sendRawTransaction ret=', ret)
       }
