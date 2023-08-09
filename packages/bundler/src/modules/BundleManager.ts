@@ -1,8 +1,8 @@
-import { EntryPoint } from '@account-abstraction/contracts'
+import { EntryPoint, UserOperationStruct } from '@account-abstraction/contracts'
 import { MempoolManager } from './MempoolManager'
 import { ValidateUserOpResult, ValidationManager } from './ValidationManager'
-import { BigNumber, BigNumberish, ethers } from 'ethers'
-import { JsonRpcProvider, JsonRpcSigner } from '@ethersproject/providers'
+import { BigNumber, BigNumberish, PopulatedTransaction, ethers } from 'ethers'
+import { FeeData, JsonRpcProvider, JsonRpcSigner } from '@ethersproject/providers'
 import Debug from 'debug'
 import { ReputationManager, ReputationStatus } from './ReputationManager'
 import { Mutex } from 'async-mutex'
@@ -90,6 +90,47 @@ export class BundleManager {
   }
 
   /**
+   * retrieve the populated transaction object.
+   * some network are facing underpriced transaction error like Polygon with pre eip 1559 transaction type.
+   * @param props the user operation transaction context
+   * @returns the populated transaction object
+   */
+  async getTxByChain(props: {
+    chainId: string;
+    userOps: UserOperationStruct[],
+    beneficiary: string;
+    feeData: FeeData;
+  }): Promise<PopulatedTransaction> {
+    switch (props.chainId) {
+      case "0x1" || "1":
+        return await this.entryPoint.populateTransaction.handleOps(props.userOps, props.beneficiary, {
+          type: 2,
+          nonce: await this.signer.getTransactionCount(),
+          gasLimit: this.getGasLimit(props.chainId),
+          maxPriorityFeePerGas: props.feeData.maxPriorityFeePerGas ?? 0,
+          maxFeePerGas: props.feeData.maxFeePerGas ?? 0
+        });
+      case "0x89" || "137":
+        //non-eip1559 transaction
+        return await this.entryPoint.populateTransaction.handleOps(props.userOps, props.beneficiary, {
+          nonce: await this.signer.getTransactionCount(),
+          gasLimit: this.getGasLimit(props.chainId),
+          gasPrice: props.feeData.gasPrice ?? 0,
+        })
+      case "0xa4b1" || "42161":
+        return await this.entryPoint.populateTransaction.handleOps(props.userOps, props.beneficiary, {
+          type: 2,
+          nonce: await this.signer.getTransactionCount(),
+          gasLimit: this.getGasLimit(props.chainId),
+          maxPriorityFeePerGas: props.feeData.maxPriorityFeePerGas ?? 0,
+          maxFeePerGas: props.feeData.maxFeePerGas ?? 0
+        });
+      default:
+        throw new Error("Unsupported chain id: + chainId");
+    }
+  }
+
+  /**
    * submit a bundle.
    * after submitting the bundle, remove all UserOps from the mempool
    * @return SendBundleReturn the transaction and UserOp hashes on successful transaction, or null on failed transaction
@@ -99,22 +140,13 @@ export class BundleManager {
       const feeData = await this.provider.getFeeData();
       console.log("Current gas data: ", feeData);
 
-      //disabling eip1559 transaction type, encountering underpriced tx on polygon
+      const tx = await this.getTxByChain({
+        chainId: this.provider._network.chainId.toString(),
+        userOps: userOps,
+        feeData: feeData,
+        beneficiary: beneficiary
+      });
 
-      //const tx = await this.entryPoint.populateTransaction.handleOps(userOps, beneficiary, {
-      //  type: 2,
-      //  nonce: await this.signer.getTransactionCount(),
-      //  gasLimit: 10e6,
-      //  maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ?? 0,
-      //  maxFeePerGas: feeData.maxFeePerGas ?? 0
-      //})
-
-      //non-eip1559 transaction
-      const tx = await this.entryPoint.populateTransaction.handleOps(userOps, beneficiary, {
-        nonce: await this.signer.getTransactionCount(),
-        gasLimit: this.getGasLimit(this.provider._network.chainId.toString()),
-        gasPrice: feeData.gasPrice ?? 0,
-      })
       tx.chainId = this.provider._network.chainId
       const signedTx = await this.signer.signTransaction(tx)
       let ret: string
