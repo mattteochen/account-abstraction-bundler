@@ -102,7 +102,7 @@ export class BundleManager {
     feeData: FeeData;
   }): Promise<PopulatedTransaction> {
     switch (props.chainId) {
-      case "0x1" || "1":
+      case "1":
         return await this.entryPoint.populateTransaction.handleOps(props.userOps, props.beneficiary, {
           type: 2,
           nonce: await this.signer.getTransactionCount(),
@@ -110,14 +110,14 @@ export class BundleManager {
           maxPriorityFeePerGas: props.feeData.maxPriorityFeePerGas ?? 0,
           maxFeePerGas: props.feeData.maxFeePerGas ?? 0
         });
-      case "0x89" || "137":
+      case "137":
         //non-eip1559 transaction
         return await this.entryPoint.populateTransaction.handleOps(props.userOps, props.beneficiary, {
           nonce: await this.signer.getTransactionCount(),
           gasLimit: this.getGasLimit(props.chainId),
           gasPrice: props.feeData.gasPrice ?? 0,
         })
-      case "0xa4b1" || "42161":
+      case "42161":
         return await this.entryPoint.populateTransaction.handleOps(props.userOps, props.beneficiary, {
           type: 2,
           nonce: await this.signer.getTransactionCount(),
