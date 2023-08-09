@@ -126,7 +126,7 @@ export class BundleManager {
           maxFeePerGas: props.feeData.maxFeePerGas ?? 0
         });
       default:
-        throw new Error("Unsupported chain id: + chainId");
+        throw new Error("Unsupported chain id: " + props.chainId);
     }
   }
 
